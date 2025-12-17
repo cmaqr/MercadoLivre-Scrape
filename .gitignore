@@ -1,0 +1,15 @@
+# Dependências do Node
+node_modules/
+
+# Logs de erro e debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Arquivos de sistema operacional
+.DS_Store
+Thumbs.db
+
+# Arquivos gerados pelo script
+debug-*.html
+scraped-*.json
