@@ -1,0 +1,16 @@
+{
+  "name": "scrape-ml",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "scrape-mercadolivre.js",
+  "scripts": {
+    "start": "node scrape-mercadolivre.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "puppeteer": "^24.31.0"
+  }
+}
