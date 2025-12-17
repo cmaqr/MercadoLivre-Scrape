@@ -1,26 +1,26 @@
-# Mercado Livre Scraper
+# 📦 Mercado Livre Scraper
 
 Este projeto é um script de automação em Node.js que utiliza o [Puppeteer](https://pptr.dev/) para realizar scraping de dados de produtos no Mercado Livre com base em um termo de pesquisa fornecido via linha de comando.
 
-## Funcionalidades
+## ✨ Funcionalidades
 
-- **Busca Dinâmica**: Aceita qualquer termo de pesquisa via CLI.
-- **Rolagem Automática**: Executa scroll na página para carregar produtos via "infinite scroll".
-- **Extração Híbrida**: Coleta dados tanto dos elementos visuais (DOM) quanto de dados estruturados ocultos (JSON-LD).
-- **Dados Coletados**: Título, preço, preço promocional, imagem, link, frete grátis, entrega Full, entre outros.
-- **Debug**: Salva uma cópia do HTML da página para análise em caso de erros.
+- 🔍 **Busca Dinâmica**: Aceita qualquer termo de pesquisa via CLI.
+- 📜 **Rolagem Automática**: Executa scroll na página para carregar produtos via "infinite scroll".
+- 🕸️ **Extração Híbrida**: Coleta dados tanto dos elementos visuais (DOM) quanto de dados estruturados ocultos (JSON-LD).
+- 📊 **Dados Coletados**: Título, preço, preço promocional, imagem, link, frete grátis, entrega Full, entre outros.
+- 🐛 **Debug**: Salva uma cópia do HTML da página para análise em caso de erros.
 
-## Pré-requisitos
+## 🛠️ Pré-requisitos
 
 - [Node.js](https://nodejs.org/) (versão 14 ou superior recomendada).
 
-## Instalação
+## 🚀 Instalação
 
 1. Abra o terminal na pasta do projeto.
-2. Instale as dependências necessárias (principalmente o Puppeteer):
+2. Instale as dependências listadas no `package.json`:
 
 ```bash
-npm install puppeteer
+npm install
 ```
 
 ## Como Usar
