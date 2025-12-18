@@ -9,6 +9,7 @@ Este projeto é um script de automação em Node.js que utiliza o [Puppeteer](ht
 - 🕸️ **Extração Híbrida**: Coleta dados tanto dos elementos visuais (DOM) quanto de dados estruturados ocultos (JSON-LD).
 - 📊 **Dados Coletados**: Título, preço, preço promocional, imagem, link, frete grátis, entrega Full, entre outros.
 - 🐛 **Debug**: Salva uma cópia do HTML da página para análise em caso de erros.
+    - O debug de HTML foi removido na versão Cloud Function para otimização de recursos.
 
 ## 🛠️ Pré-requisitos
 
