@@ -29,7 +29,7 @@ async function start(term) {
     browser = await puppeteer.launch({ headless: false, slowMo: 50, args: launchArgs });
     const page = await browser.newPage();
 
-    if (proxyUsername && proxyPassword) {
+    if (proxyServer && proxyUsername) {
       await page.authenticate({ username: proxyUsername, password: proxyPassword });
     }
 

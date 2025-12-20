@@ -25,20 +25,39 @@ npm install
 
 ## ⚙️ Configuração de Proxy (Opcional)
 
-Se você precisar usar um servidor de proxy para as requisições, pode configurar as seguintes variáveis de ambiente em um arquivo `.env` na raiz do projeto.
+Se você precisar usar um servidor de proxy para as requisições, pode configurar as variáveis de ambiente em um arquivo `.env` na raiz do projeto.
 
-Crie um arquivo chamado `.env` e adicione as seguintes variáveis:
+Crie um arquivo chamado `.env` e adicione as variáveis conforme sua necessidade.
+
+### Proxy sem Autenticação
+
+Se o seu proxy não exige login, basta definir o servidor:
 
 ```dotenv
 # Endereço do servidor de proxy (ex: http://127.0.0.1:8080)
 PROXY_SERVER="http://seu-proxy-server:porta"
+```
 
-# Credenciais de autenticação (se o proxy exigir)
+### Proxy com Autenticação
+
+Se o proxy exige um nome de usuário e senha:
+
+```dotenv
+PROXY_SERVER="http://seu-proxy-server:porta"
 PROXY_USERNAME="seu-usuario"
 PROXY_PASSWORD="sua-senha"
 ```
 
-O script carregará essas variáveis automaticamente. Se `PROXY_SERVER` não for definido, nenhuma configuração de proxy será utilizada.
+### Proxy com Apenas Usuário
+
+Se o proxy exige apenas um nome de usuário, mas não uma senha:
+
+```dotenv
+PROXY_SERVER="http://seu-proxy-server:porta"
+PROXY_USERNAME="seu-usuario"
+```
+
+O script aplicará a configuração de proxy se a variável `PROXY_SERVER` for definida. A autenticação será usada se `PROXY_USERNAME` também for fornecido.
 
 ## Como Usar
 
