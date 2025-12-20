@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import puppeteer from 'puppeteer';
 import { writeFile } from 'fs/promises';
 
@@ -13,10 +14,25 @@ async function start(term) {
   const url = montarUrl(term);
   const termSlug = term.trim().replace(/\s+/g, '-');
 
+  // --- CONFIGURAÇÃO DE PROXY ---
+  // Preencha aqui se precisar usar proxy. Ex: 'http://123.123.123.123:8080'
+  const proxyServer = process.env.PROXY_SERVER || ''; 
+  const proxyUsername = process.env.PROXY_USERNAME || '';
+  const proxyPassword = process.env.PROXY_PASSWORD || '';
+  // -----------------------------
+
   let browser;
   try {
-    browser = await puppeteer.launch({ headless: false, slowMo: 50, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    const launchArgs = ['--no-sandbox', '--disable-setuid-sandbox'];
+    if (proxyServer) launchArgs.push(`--proxy-server=${proxyServer}`);
+
+    browser = await puppeteer.launch({ headless: false, slowMo: 50, args: launchArgs });
     const page = await browser.newPage();
+
+    if (proxyUsername && proxyPassword) {
+      await page.authenticate({ username: proxyUsername, password: proxyPassword });
+    }
+
     await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     await page.setViewport({ width: 1280, height: 800 });
 

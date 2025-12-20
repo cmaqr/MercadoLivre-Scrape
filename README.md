@@ -23,6 +23,23 @@ Este projeto é um script de automação em Node.js que utiliza o [Puppeteer](ht
 npm install
 ```
 
+## ⚙️ Configuração de Proxy (Opcional)
+
+Se você precisar usar um servidor de proxy para as requisições, pode configurar as seguintes variáveis de ambiente em um arquivo `.env` na raiz do projeto.
+
+Crie um arquivo chamado `.env` e adicione as seguintes variáveis:
+
+```dotenv
+# Endereço do servidor de proxy (ex: http://127.0.0.1:8080)
+PROXY_SERVER="http://seu-proxy-server:porta"
+
+# Credenciais de autenticação (se o proxy exigir)
+PROXY_USERNAME="seu-usuario"
+PROXY_PASSWORD="sua-senha"
+```
+
+O script carregará essas variáveis automaticamente. Se `PROXY_SERVER` não for definido, nenhuma configuração de proxy será utilizada.
+
 ## Como Usar
 
 Execute o script com o comando `node`, seguido do nome do arquivo e do termo que deseja pesquisar.
