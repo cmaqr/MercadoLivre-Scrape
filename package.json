@@ -4,10 +4,16 @@
   "description": "Mercado Livre Scraper deployed as a Google Cloud Function",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "functions-framework --target=scrapeMercadoLivre",
+    "dev": "functions-framework --target=scrapeMercadoLivre"
   },
   "dependencies": {
-    "puppeteer": "^22.0.0"
+    "chrome-aws-lambda": "^10.1.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  },
+  "devDependencies": {
+    "@google-cloud/functions-framework": "^3.0.0"
   },
   "engines": {
     "node": ">=20"

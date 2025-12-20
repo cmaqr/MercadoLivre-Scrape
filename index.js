@@ -1,4 +1,8 @@
-import puppeteer from 'puppeteer';
+import chrome from 'chrome-aws-lambda';
+// Importa o puppeteer-extra e o plugin stealth
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+puppeteer.use(StealthPlugin());
 
 function montarUrl(term) {
   return 'https://lista.mercadolivre.com.br/' + term.trim().replace(/\s+/g, '-') + '#D[A:' + term.trim().replace(/\s+/g, '-') + ']';
@@ -41,21 +45,38 @@ export const scrapeMercadoLivre = async (req, res) => {
   let browser;
   try {
     browser = await puppeteer.launch({
-      headless: 'new', // Use 'new' for better performance and resource usage in serverless environments
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage', // Crucial for Cloud Functions to prevent memory issues
-        '--disable-gpu',
-        '--single-process' // Important for Cloud Functions to reduce resource consumption
-      ]
+      args: chrome.args,
+      executablePath: await chrome.executablePath,
+      headless: chrome.headless,
     });
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     await page.setViewport({ width: 1280, height: 800 });
 
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
-    await page.waitForSelector('.ui-search-result, .ui-search-layout', { timeout: 30000 });
+    console.log(`Navegando para: ${url}`);
+    // Revertido para 'networkidle2' para dar tempo para o JS de verificação do site rodar.
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 90000 });
+
+    // Espera pela primeira condição que for satisfeita: ou os resultados ou um CAPTCHA.
+    // Aumentamos o timeout geral para dar mais tempo para a página carregar em ambientes lentos.
+    const navigationTimeout = 60000;
+    try {
+      await Promise.race([
+        page.waitForSelector('.ui-search-result, .ui-search-layout__item', { timeout: navigationTimeout }),
+        page.waitForSelector('#captcha-form, .andes-captcha-challenge', { timeout: navigationTimeout }).then(() => {
+          throw new Error('CAPTCHA detectado. O Mercado Livre está bloqueando o acesso.');
+        })
+      ]);
+    } catch (e) {
+      // Se o erro for de timeout, captura o HTML da página para depuração.
+      if (e.name === 'TimeoutError') {
+        const pageContent = await page.content();
+        throw new Error(`Timeout ao esperar pelo seletor de resultados ou CAPTCHA. A página pode ter mudado ou um bloqueio diferente ocorreu. Conteúdo da página: ${pageContent.substring(0, 2000)}`);
+      }
+      throw e; // Lança outros erros (como o de CAPTCHA)
+    }
+
+    console.log('Página de resultados carregada com sucesso.');
 
     // rolagem até o fim da página: executa scroll e compara altura do body
     // quando a altura parar de aumentar (duas checagens consecutivas), assume que chegou ao fim
