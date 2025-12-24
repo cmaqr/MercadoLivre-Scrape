@@ -13,3 +13,5 @@ Thumbs.db
 # Arquivos gerados pelo script
 debug-*.html
 scraped-*.json
+
+.env
