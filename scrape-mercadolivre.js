@@ -128,13 +128,24 @@ async function start(term) {
         }
         
         // Se conseguiu extrair do JSON, processa os dados
+        // Mas APENAS se a URL estiver válida (contenha mercadolivre.com.br e um ID)
         if (polycardsData.length > 0) {
+          const validItems = [];
           polycardsData.forEach((item, idx) => {
             try {
               const pc = item.polycard;
               
               const name = pc.primary_title || `Produto ${idx + 1}`;
-              const url = (pc.metadata && pc.metadata.url) ? 'https://' + pc.metadata.url : null;
+              const rawUrl = (pc.metadata && pc.metadata.url) ? 'https://' + pc.metadata.url : null;
+              
+              // Valida se a URL contém um ID válido (MLB/MLA/MLU + números)
+              const hasValidId = rawUrl && /(MLB|MLA|MLU)[-]?\d+/i.test(rawUrl);
+              if (!rawUrl || !hasValidId) {
+                // URL inválida, pula este item para extrair do DOM
+                return;
+              }
+              
+              const url = rawUrl;
               
               // Procura pela imagem
               let image = null;
@@ -149,26 +160,23 @@ async function start(term) {
                 price = parseFloat(pc.prices.primary_price.amount) || null;
               }
               
-              // Extrai brand da URL ou do nome
+              // Extrai brand
               let brand = null;
-              if (url) {
-                // Tenta extrair do URL
-                const brandMatch = url.match(/\/([\w-]+)\//);
-                if (brandMatch) {
-                  brand = brandMatch[1].replace(/-/g, ' ').trim();
+              
+              // Tenta extrair dos atributos (se disponível)
+              if (pc.attributes && Array.isArray(pc.attributes)) {
+                const brandAttr = pc.attributes.find(a => a.id === 'BRAND' || a.name === 'Marca');
+                if (brandAttr) {
+                  brand = brandAttr.value || brandAttr.text;
                 }
               }
               
-              // Se não achou, tenta do nome
-              if (!brand) {
-                const nameWords = name.split(/\s+/);
-                const commonWords = ['whey', 'protein', 'suplemento', 'nutri', 'basic', 'combo'];
-                for (const word of nameWords) {
-                  if (!commonWords.includes(word.toLowerCase())) {
-                    brand = word;
-                    break;
-                  }
-                }
+              // Se não achou, tenta do highlight (ex: "Por Apple")
+              if (!brand && pc.highlight && pc.highlight.text) {
+                 const hText = pc.highlight.text;
+                 if (hText.toLowerCase().startsWith('por ') || hText.toLowerCase().startsWith('by ')) {
+                    brand = hText.substring(4).trim();
+                 }
               }
               
               // Extrai rating
@@ -183,7 +191,7 @@ async function start(term) {
                 ratingCount = parseInt(pc.reviews.review_count) || null;
               }
               
-              items.push({
+              validItems.push({
                 name: name,
                 url: url,
                 price: price,
@@ -196,6 +204,11 @@ async function start(term) {
               // continua com próximo item
             }
           });
+          
+          // Se conseguiu extrair items válidos do JSON, retorna apenas eles
+          if (validItems.length > 0) {
+            return validItems;
+          }
         }
         
         return items;
@@ -204,16 +217,56 @@ async function start(term) {
       // Se ainda não conseguiu extrair nada, volta ao método de DOM
       if (itemsFromJsonLd.length === 0) {
         itemsFromJsonLd = await page.evaluate(() => {
+          // Função para normalizar URL para o padrão limpo
+          const normalizeUrl = (href) => {
+            if (!href) return null;
+            
+            // Remove query params e hash
+            let cleanUrl = href.split('?')[0].split('#')[0];
+            
+            // Se é URL de tracking (click1.mercadolivre), extrai o ID e reconstrói
+            const trackingMatch = cleanUrl.match(/(MLB|MLA|MLU)[-]?(\d+)/i);
+            if (trackingMatch) {
+              const productId = trackingMatch[0].replace('-', '');
+              
+              // Tenta extrair o slug do URL original ou reconstruir
+              const titleMatch = href.match(/\/([a-z0-9-]+)\/p\/(MLB|MLA|MLU)[-]?\d+/i);
+              if (titleMatch) {
+                const slug = titleMatch[1];
+                return `https://www.mercadolivre.com.br/${slug}/p/${productId}`;
+              }
+              
+              // Se não conseguir slug, usa apenas o ID (será expandido depois)
+              return `https://www.mercadolivre.com.br/p/${productId}`;
+            }
+            
+            // Se já é URL limpa de www.mercadolivre.com.br, apenas limpa
+            if (cleanUrl.includes('www.mercadolivre.com.br')) {
+              // Remove tudo após /p/[ID]
+              const idMatch = cleanUrl.match(/\/p\/(MLB|MLA|MLU)[-]?\d+/i);
+              if (idMatch) {
+                const endIdx = cleanUrl.indexOf(idMatch[0]) + idMatch[0].length;
+                return cleanUrl.substring(0, endIdx);
+              }
+              return cleanUrl;
+            }
+            
+            return cleanUrl;
+          };
+          
           const items = [];
           const cards = document.querySelectorAll('[data-component-type="s-search-result"], .ui-search-layout__item');
           
           cards.forEach((card, idx) => {
             try {
-              let linkEl = card.querySelector('a[href*="/p/MLB"], a[href*="/p/MLA"]');
+              let linkEl = card.querySelector('a[href*="MLB"], a[href*="MLA"], a[href*="MLU"]');
               if (!linkEl) linkEl = card.querySelector('h2 a') || card.querySelector('a[href*="mercadolivre"]');
               if (!linkEl) return;
               
-              const url = linkEl.href;
+              const url = normalizeUrl(linkEl.href);
+              // Garante que a URL tenha o padrão de ID exigido (MLB, MLA, MLU)
+              if (!url || !/(MLB|MLA|MLU)[-]?\d+/i.test(url)) return;
+
               const imgEl = card.querySelector('img[src*="mlstatic"]');
               const image = imgEl ? (imgEl.dataset.src || imgEl.src) : null;
               
@@ -228,30 +281,20 @@ async function start(term) {
               if (highlightEl) {
                 const highlightText = highlightEl.innerText.trim();
                 if (highlightText && highlightText.length < 50) {
-                  brand = highlightText;
+                  const lower = highlightText.toLowerCase();
+                  if (lower.startsWith('por ') || lower.startsWith('by ')) {
+                    brand = highlightText.substring(4).trim();
+                  } else if (!lower.includes('vendidos') && !lower.includes('%') && !lower.includes('oferta') && !lower.includes('patrocinado') && !lower.includes('disponível') && !lower.includes('off')) {
+                    brand = highlightText;
+                  }
                 }
               }
               
-              // Se não achou, tenta: elementos com classe poly-fw-semibold ou similar
+              // Se não achou, tenta: classe específica de brand
               if (!brand) {
-                const brandEl = card.querySelector('[class*="poly"][class*="semibold"], .poly-component__brand, [class*="brand"]');
+                const brandEl = card.querySelector('.poly-component__brand');
                 if (brandEl) {
-                  const brandText = brandEl.innerText.trim();
-                  if (brandText && brandText.length < 50) {
-                    brand = brandText;
-                  }
-                }
-              }
-              
-              // Se não achou, tenta procurar por qualquer span que tenha texto em CAPS
-              if (!brand) {
-                const spans = card.querySelectorAll('span[class*="poly"]');
-                for (const span of spans) {
-                  const text = span.innerText.trim();
-                  if (text && text.length < 30 && text === text.toUpperCase() && text.length > 2) {
-                    brand = text;
-                    break;
-                  }
+                  brand = brandEl.innerText.trim();
                 }
               }
               
@@ -350,7 +393,7 @@ async function start(term) {
       const findAnchor = url => {
         if (!url) return null;
         const cleaned = clean(url);
-        const idMatch = url.match(/(MLB|MLA|MLU)\d+/i);
+        const idMatch = url.match(/(MLB|MLA|MLU)[-]?\d+/i);
         const anchors = Array.from(document.querySelectorAll('a[href]'));
         for (const a of anchors) {
           try {
@@ -392,8 +435,13 @@ async function start(term) {
           if ('ratingCount' in result) result.ratingCount = item.ratingCount || null;
 
           if ('id' in result) {
-            const m = item.url.match(/(MLB|MLA|MLU)\d+/i);
-            result.id = m ? m[0] : (item.url.split('/').filter(Boolean).pop() || null);
+            // Extrai ID no padrão (MLB|MLA|MLU) + números (ex: MLB1027172671)
+            const idMatch = item.url.match(/(MLB|MLA|MLU)[-]?\d+/i);
+            if (idMatch && idMatch[0]) {
+              result.id = idMatch[0].toUpperCase().replace('-', '');
+            } else {
+              result.id = null;
+            }
           }
 
           const a = findAnchor(item.url);
@@ -476,17 +524,19 @@ async function start(term) {
           }
         } catch (e) { }
 
-        if ('id' in result && !result.id) result.id = `item_${idx+1}`;
         // Sempre adiciona name internamente para ser usado como chave, mesmo se não estiver em fieldMap
         result._internalName = itemName;
         return result;
       });
     }, itemsFromJsonLd, fieldMap);
 
+    // Filtra apenas itens com ID válido (contendo MLB, MLA ou MLU)
+    const validEnriched = enriched.filter(it => it.id && /(MLB|MLA|MLU)/i.test(it.id));
+
     // Mesclar dados do JSON-LD (jsonLdProducts) com os itens enriquecidos pelo DOM.
     // Alguns sites colocam o preço atual no JSON-LD e o preço anterior (riscado) apenas no DOM.
     const productsMap = {};
-    enriched.forEach(it => { 
+    validEnriched.forEach(it => { 
       const key = it._internalName || it.id || 'produto_sem_nome';
       delete it._internalName; // Remove o campo interno antes de salvar
       productsMap[key] = it; 
@@ -497,8 +547,8 @@ async function start(term) {
     for (const p of jsonLdProducts) {
       try {
         const url = (p.url || (p.offers && p.offers.url) || p['@id'] || '').toString();
-        const idMatch = url.match(/(MLB|MLA|MLU)\d+/i);
-        const id = idMatch ? idMatch[0] : (url.split('/').filter(Boolean).pop() || null);
+        const idMatch = url.match(/(MLB|MLA|MLU)[-]?\d+/i);
+        const id = idMatch ? idMatch[0].replace('-', '') : (url.split('/').filter(Boolean).pop() || null);
         if (id) jsonLdIndex[id] = p;
         if (url) jsonLdIndex[url] = p; // também indexar por URL
       } catch (e) { }
@@ -545,7 +595,7 @@ async function start(term) {
       term,
       url,
       scrapedAt: new Date().toISOString(),
-      count: enriched.length,
+      count: validEnriched.length,
       products: productsMap,
      // itemsArray: enriched,
      // jsonLdCount: jsonLdProducts.length,
