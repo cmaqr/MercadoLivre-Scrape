@@ -89,15 +89,218 @@ async function start(term) {
         console.error('Erro ao parsear JSON-LD:', e.message);
             }
           } else {
-            console.log('JSON-LD não encontrado na página.');
+            console.log('JSON-LD não encontrado na página. Extraindo dados do DOM...');
           }
 
-          const itemsFromJsonLd = jsonLdProducts.map(p => ({
-            name: p.name || null,
-            url: p.url || (p.offers && p.offers.url) || (p['@id'] || null),
-            price: (p.offers && p.offers.price) || null,
-            image: Array.isArray(p.image) ? p.image[0] : p.image || null
-          }));
+    // Extrai itens do JSON-LD ou do DOM
+    let itemsFromJsonLd = [];
+    
+    if (jsonLdProducts.length > 0) {
+      itemsFromJsonLd = jsonLdProducts.map(p => ({
+        name: p.name || null,
+        url: p.url || (p.offers && p.offers.url) || (p['@id'] || null),
+        price: (p.offers && p.offers.price) || null,
+        image: Array.isArray(p.image) ? p.image[0] : p.image || null
+      }));
+    } else {
+      // Se não tem JSON-LD, extrai do JavaScript/JSON embutido na página
+      itemsFromJsonLd = await page.evaluate(() => {
+        const items = [];
+        
+        // Procura por dados JSON embutidos no HTML (NextJS/React data)
+        const scripts = Array.from(document.querySelectorAll('script'));
+        let polycardsData = [];
+        
+        for (const script of scripts) {
+          if (!script.textContent) continue;
+          try {
+            const match = script.textContent.match(/"results":\s*\[(.*?)\]/);
+            if (match) {
+              // Tenta fazer parse da seção de results
+              const resultsStr = '[' + match[1] + ']';
+              const results = JSON.parse(resultsStr);
+              polycardsData = results.filter(r => r.polycard && r.polycard.primary_title);
+              if (polycardsData.length > 0) break;
+            }
+          } catch (e) {
+            // continua procurando
+          }
+        }
+        
+        // Se conseguiu extrair do JSON, processa os dados
+        if (polycardsData.length > 0) {
+          polycardsData.forEach((item, idx) => {
+            try {
+              const pc = item.polycard;
+              
+              const name = pc.primary_title || `Produto ${idx + 1}`;
+              const url = (pc.metadata && pc.metadata.url) ? 'https://' + pc.metadata.url : null;
+              
+              // Procura pela imagem
+              let image = null;
+              if (pc.pictures && pc.pictures.pictures && pc.pictures.pictures[0]) {
+                const picId = pc.pictures.pictures[0].id;
+                image = `https://http2.mlstatic.com/${picId}.webp`;
+              }
+              
+              // Extrai preço
+              let price = null;
+              if (pc.prices && pc.prices.primary_price) {
+                price = parseFloat(pc.prices.primary_price.amount) || null;
+              }
+              
+              // Extrai brand da URL ou do nome
+              let brand = null;
+              if (url) {
+                // Tenta extrair do URL
+                const brandMatch = url.match(/\/([\w-]+)\//);
+                if (brandMatch) {
+                  brand = brandMatch[1].replace(/-/g, ' ').trim();
+                }
+              }
+              
+              // Se não achou, tenta do nome
+              if (!brand) {
+                const nameWords = name.split(/\s+/);
+                const commonWords = ['whey', 'protein', 'suplemento', 'nutri', 'basic', 'combo'];
+                for (const word of nameWords) {
+                  if (!commonWords.includes(word.toLowerCase())) {
+                    brand = word;
+                    break;
+                  }
+                }
+              }
+              
+              // Extrai rating
+              let rating = null;
+              if (pc.reviews && pc.reviews.rating) {
+                rating = parseFloat(pc.reviews.rating) || null;
+              }
+              
+              // Extrai ratingCount
+              let ratingCount = null;
+              if (pc.reviews && pc.reviews.review_count) {
+                ratingCount = parseInt(pc.reviews.review_count) || null;
+              }
+              
+              items.push({
+                name: name,
+                url: url,
+                price: price,
+                image: image,
+                brand: brand,
+                rating: rating,
+                ratingCount: ratingCount
+              });
+            } catch (e) {
+              // continua com próximo item
+            }
+          });
+        }
+        
+        return items;
+      });
+      
+      // Se ainda não conseguiu extrair nada, volta ao método de DOM
+      if (itemsFromJsonLd.length === 0) {
+        itemsFromJsonLd = await page.evaluate(() => {
+          const items = [];
+          const cards = document.querySelectorAll('[data-component-type="s-search-result"], .ui-search-layout__item');
+          
+          cards.forEach((card, idx) => {
+            try {
+              let linkEl = card.querySelector('a[href*="/p/MLB"], a[href*="/p/MLA"]');
+              if (!linkEl) linkEl = card.querySelector('h2 a') || card.querySelector('a[href*="mercadolivre"]');
+              if (!linkEl) return;
+              
+              const url = linkEl.href;
+              const imgEl = card.querySelector('img[src*="mlstatic"]');
+              const image = imgEl ? (imgEl.dataset.src || imgEl.src) : null;
+              
+              let name = linkEl.getAttribute('title') || linkEl.innerText || '';
+              name = name.trim().split('\n')[0] || `Produto ${idx + 1}`;
+              
+              // Extrai brand: procura em vários lugares possíveis
+              let brand = null;
+              
+              // Primeiro tenta: .poly-component__highlight (LOJA OFICIAL, MARCA, etc)
+              const highlightEl = card.querySelector('.poly-component__highlight');
+              if (highlightEl) {
+                const highlightText = highlightEl.innerText.trim();
+                if (highlightText && highlightText.length < 50) {
+                  brand = highlightText;
+                }
+              }
+              
+              // Se não achou, tenta: elementos com classe poly-fw-semibold ou similar
+              if (!brand) {
+                const brandEl = card.querySelector('[class*="poly"][class*="semibold"], .poly-component__brand, [class*="brand"]');
+                if (brandEl) {
+                  const brandText = brandEl.innerText.trim();
+                  if (brandText && brandText.length < 50) {
+                    brand = brandText;
+                  }
+                }
+              }
+              
+              // Se não achou, tenta procurar por qualquer span que tenha texto em CAPS
+              if (!brand) {
+                const spans = card.querySelectorAll('span[class*="poly"]');
+                for (const span of spans) {
+                  const text = span.innerText.trim();
+                  if (text && text.length < 30 && text === text.toUpperCase() && text.length > 2) {
+                    brand = text;
+                    break;
+                  }
+                }
+              }
+              
+              // Extrai rating e ratingCount dos elementos poly-phrase-label
+              let rating = null;
+              let ratingCount = null;
+              
+              const phraseLabels = card.querySelectorAll('.poly-phrase-label');
+              for (const label of phraseLabels) {
+                const text = label.innerText.trim();
+                
+                // Procura por rating: "4.9", "4.5", etc
+                const ratingMatch = text.match(/^([0-9]+(?:[.,][0-9]+)?)$/);
+                if (ratingMatch && !rating) {
+                  rating = parseFloat(ratingMatch[1].replace(',', '.'));
+                  continue;
+                }
+                
+                // Procura por ratingCount: "+5mil vendidos", "+50k vendidos", "+1.2k vendidos", etc
+                const countMatch = text.match(/\+\s*([0-9.]+)\s*(mil|k)\s+vendidos?/i);
+                if (countMatch && !ratingCount) {
+                  const numberPart = parseFloat(countMatch[1].replace(',', '.'));
+                  const unit = countMatch[2].toLowerCase();
+                  
+                  // Converte para número inteiro
+                  if (unit === 'mil' || unit === 'k') {
+                    ratingCount = Math.round(numberPart * 1000);
+                  }
+                }
+              }
+              
+              items.push({
+                name: name,
+                url: url,
+                price: null,
+                image: image,
+                brand: brand,
+                rating: rating,
+                ratingCount: ratingCount
+              });
+            } catch (e) { }
+          });
+          
+          return items;
+        });
+      }
+      
+      console.log(`Extraídos ${itemsFromJsonLd.length} produtos do JSON/DOM`);
+    }
 
     // ========== MAPA DE CAMPOS: EDITE AQUI PARA INCLUIR/EXCLUIR CAMPOS ==========
     // Descomente/comente campos conforme necessário. Use o formato: nomeDoCampo: tipo
@@ -183,6 +386,11 @@ async function start(term) {
           if ('price' in result) result.price = item.price || null;
           if ('image' in result) result.image = item.image || null;
 
+          // Preenche dados do DOM se disponíveis
+          if ('brand' in result) result.brand = item.brand || null;
+          if ('rating' in result) result.rating = item.rating || null;
+          if ('ratingCount' in result) result.ratingCount = item.ratingCount || null;
+
           if ('id' in result) {
             const m = item.url.match(/(MLB|MLA|MLU)\d+/i);
             result.id = m ? m[0] : (item.url.split('/').filter(Boolean).pop() || null);
@@ -205,8 +413,8 @@ async function start(term) {
               result.freeShipping = true;
             }
             
-            // Detecta isFull: procura por "FULL", "full", "enviado pelo", ou qualquer variação
-            if ('isFull' in result && (nodeHtml.includes('FULL') || nodeHtml.includes('vpp_full') || nodeText.includes('enviado pelo') || nodeText.includes('full'))) {
+            // Detecta isFull: procura por aria-label="full" ou classe vpp_full
+            if ('isFull' in result && (nodeHtml.includes('aria-label="full"') || nodeHtml.includes('FULL') || nodeHtml.includes('vpp_full') || nodeText.includes('enviado pelo') || nodeText.includes('full'))) {
               result.isFull = true;
             }
             
